@@ -12,7 +12,7 @@ global_counter = Counter()
 time_list = []
 
 filenames = sorted(glob.glob("/u/demorali/corpora/1g-word-lm-benchmark-r13output/training-monolingual.tokenized.shuffled/*"))
-filenames = filenames[:5]
+#filenames = filenames[:10]
 start_time = time.perf_counter()
 for i, filename in enumerate(filenames):
     print(filename,i)
