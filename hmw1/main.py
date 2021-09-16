@@ -5,6 +5,10 @@ import glob
 import numpy as np
 #import matplotlib.pyplot as plt
 import time
+import string
+from nltk import word_tokenize
+from nltk.corpus import stopwords
+stop_words = stopwords.words['english']
 
 num_tokens = []
 num_types = []
@@ -22,6 +26,14 @@ for i, filename in enumerate(filenames):
     doc_tokens = 0
     
     for line in lines:
+        prepro = True
+        if prepro:
+            # https://towardsdatascience.com/nlp-preprocessing-with-nltk-3c04ee00edc0
+            line = line.lower() #lowercase
+            text_p = ""join([char for char in line if char not in string.punctuation]) #remove punctuation
+            words = word_tokenize(text_p)
+            filtered_words = [word for word in words if word not in stop_words]
+            
         line_counter = Counter(line.split())
         global_counter.update(line_counter)
     num_tokens.append(sum(global_counter.values()))
@@ -34,6 +46,12 @@ print('I love DIRO')
 print(num_tokens)
 print(num_types)
 print(time_list)
+
+print('100 most frequent words', global_counter.most_common(100))
+
+print('1000 most frequent words after preprocessing', global_counter.most_common(1000))
+
+print('1000 less frequent words after preprocessing', global_counter.most_common()[:-1001:-1])
 #plt.plot(num_tokens)
 #plt.ylabel('counts')
 #plt.show()
