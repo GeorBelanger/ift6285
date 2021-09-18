@@ -8,15 +8,16 @@ import time
 import string
 from nltk import word_tokenize
 from nltk.corpus import stopwords
-stop_words = stopwords.words['english']
+stop_words = stopwords.words('english')
 
+from cleantext import clean
 num_tokens = []
 num_types = []
 global_counter = Counter()
 time_list = []
 
 filenames = sorted(glob.glob("/u/demorali/corpora/1g-word-lm-benchmark-r13output/training-monolingual.tokenized.shuffled/*"))
-#filenames = filenames[:10]
+filenames = filenames[:10]
 start_time = time.perf_counter()
 for i, filename in enumerate(filenames):
     print(filename,i)
@@ -29,10 +30,33 @@ for i, filename in enumerate(filenames):
         prepro = True
         if prepro:
             # https://towardsdatascience.com/nlp-preprocessing-with-nltk-3c04ee00edc0
-            line = line.lower() #lowercase
-            text_p = ""join([char for char in line if char not in string.punctuation]) #remove punctuation
-            words = word_tokenize(text_p)
-            filtered_words = [word for word in words if word not in stop_words]
+            #line = line.lower() #lowercase
+            #text_p = "".join([char for char in line if char not in string.punctuation]) #remove punctuation
+            #words = word_tokenize(text_p)
+            #filtered_words = [word for word in words if word not in stop_words]
+
+
+            line=clean(line,
+                fix_unicode=False,               # fix various unicode errors
+                to_ascii=False,                  # transliterate to closest ASCII representation
+                lower=True,                     # lowercase text
+                no_line_breaks=False,           # fully strip line breaks as opposed to only normalizing them
+                no_urls=False,                  # replace all URLs with a special token
+                no_emails=False,                # replace all email addresses with a special token
+                no_phone_numbers=False,         # replace all phone numbers with a special token
+                no_numbers=False,               # replace all numbers with a special token
+                no_digits=False,                # replace all digits with a special token
+                no_currency_symbols=False,      # replace all currency symbols with a special token
+                no_punct=False,                 # remove punctuations
+                replace_with_punct="",          # instead of removing punctuations you may replace them
+                replace_with_url="<URL>",
+                replace_with_email="<EMAIL>",
+                replace_with_phone_number="<PHONE>",
+                replace_with_number="<NUMBER>",
+                replace_with_digit="0",
+                replace_with_currency_symbol="<CUR>",
+                lang="en"                       # set to 'de' for German special handling
+            )
             
         line_counter = Counter(line.split())
         global_counter.update(line_counter)
