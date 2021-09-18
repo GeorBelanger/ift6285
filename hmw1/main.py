@@ -25,7 +25,7 @@ for i, filename in enumerate(filenames):
     with open(filename, 'r') as f:
         lines = f.readlines()
     doc_tokens = 0
-    
+#    lines = lines[:10]
     for line in lines:
         prepro = True
         if prepro:
@@ -41,13 +41,13 @@ for i, filename in enumerate(filenames):
                 to_ascii=False,                  # transliterate to closest ASCII representation
                 lower=True,                     # lowercase text
                 no_line_breaks=False,           # fully strip line breaks as opposed to only normalizing them
-                no_urls=False,                  # replace all URLs with a special token
+                no_urls=True,                  # replace all URLs with a special token
                 no_emails=False,                # replace all email addresses with a special token
                 no_phone_numbers=False,         # replace all phone numbers with a special token
-                no_numbers=False,               # replace all numbers with a special token
+                no_numbers=True,               # replace all numbers with a special token
                 no_digits=False,                # replace all digits with a special token
                 no_currency_symbols=False,      # replace all currency symbols with a special token
-                no_punct=False,                 # remove punctuations
+                no_punct=True,                 # remove punctuations
                 replace_with_punct="",          # instead of removing punctuations you may replace them
                 replace_with_url="<URL>",
                 replace_with_email="<EMAIL>",
@@ -72,21 +72,41 @@ print(num_types)
 print(time_list)
 
 print('100 most frequent words', global_counter.most_common(100))
+#mc100 = global_counter.most_common(100)
+#df_mc100 = pd.DataFrame(mc100, columns=['Word'
+f1 = open('freq-1bshort', 'a')
+for word, count in global_counter.most_common(100):
+    st = word + " " + str(count) + "\n"
+    f1.write(st)
+f1.close() 
 
 print('1000 most frequent words after preprocessing', global_counter.most_common(1000))
 
+f2 = open('freq-top1000', 'a')
+for word, count in global_counter.most_common(1000):
+    st = word + " "
+    f2.write(st)
+f2.close()
+
 print('1000 less frequent words after preprocessing', global_counter.most_common()[:-1001:-1])
+
+f3 = open('freq-less1000', 'a')
+for word, count in global_counter.most_common()[:-1001:-1]:
+    st = word + " "
+    f3.write(st)
+f3.close()
+
 #plt.plot(num_tokens)
 #plt.ylabel('counts')
 #plt.show()
-with open('num_tokens.txt', 'w') as nt:
-    for item in num_tokens:
-        nt.write("%s\n" % item)
+#with open('num_tokens.txt', 'w') as nt:
+#    for item in num_tokens:
+#        nt.write("%s\n" % item)
 
-with open('num_types.txt', 'w') as nty:
+with open('4_transf_num_types.txt', 'w') as nty:
     for item in num_types:
         nty.write("%s\n" % item)
 
-with open('time_list.txt', 'w') as tl:
+with open('4_transf_time_list.txt', 'w') as tl:
     for item in time_list:
         tl.write("%s\n" % item)
