@@ -10,6 +10,7 @@ MIT license: www.opensource.org/licenses/mit-license.php
 import re
 from collections import Counter
 import argparse
+import numpy as np
 
 
 WORDS = {}
@@ -25,20 +26,29 @@ WORDS = {}
 #         print(line, e)
 # print(WORDS)
 
-def P(word, N=sum(WORDS.values())): 
+# def P(word, N=sum(WORDS.values())): 
+def P(word, N): 
 # def P(word, N=sum(WORDS.freq.values)): 
     "Probability of `word`."
-    # try:
-    #     prob = WORDS[word] / N 
-    # except:
-    #     prob = 0
-    # return prob
-    return WORDS[word] / N
+    try:
+        prob = WORDS[word] / N 
+    except:
+        prob = 0
+        print(f'the word {word} or its edit1 and edit 2 does not appear in the voc')
+    return prob
+    # return WORDS[word] / N
 
-def correction(word): 
+def correction(word, N): 
     "Most probable spelling correction for word."
     # import pdb; pdb.set_trace()
-    return max(candidates(word), key=P)
+    candidate_list = [cand for cand in candidates(word)]
+    cand_prob = [P(cand, N) for cand in candidates(word)]
+    
+    # return max(candidates(word), key=P)
+    max_idx = np.argmax(cand_prob)
+
+    # return max(candidates(word), key=P)
+    return candidate_list[max_idx]
 
 def candidates(word): 
     "Generate possible spelling corrections for word."
@@ -77,7 +87,7 @@ def unit_tests():
     assert 0.07 < P('the') < 0.08
     return 'unit_tests pass'
 
-def spelltest(tests, verbose=False):
+def spelltest(tests, N, verbose=False):
     "Run correction(wrong) on all (right, wrong) pairs; report results."
     import time
     start = time.perf_counter()
@@ -85,7 +95,7 @@ def spelltest(tests, verbose=False):
     n = len(tests)
     # for right, wrong in tests:
     for wrong, right in tests:
-        w = correction(wrong)
+        w = correction(wrong, N)
         good += (w == right)
         if w != right:
             unknown += (right not in WORDS)
@@ -133,8 +143,9 @@ if __name__ == '__main__':
         except Exception as e:
             print(line, e)
     print(WORDS)
+    N=sum(WORDS.values())
     # import pdb; pdb.set_trace()
-    # spelltest(Testset2(open('ift6285/hmw3/devoir3-train.txt')))
+    spelltest(Testset2(open('ift6285/hmw3/devoir3-train.txt')), N)
 
 
 
