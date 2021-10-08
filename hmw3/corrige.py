@@ -11,6 +11,7 @@ import re
 from collections import Counter
 import argparse
 import numpy as np
+import textdistance
 
 
 WORDS = {}
@@ -38,17 +39,39 @@ def P(word, N):
     return prob
     # return WORDS[word] / N
 
-def correction(word, N): 
+def correction(word, N, dist='unigram'): 
     "Most probable spelling correction for word."
     candidate_list = [cand for cand in candidates(word)]
     cand_prob = [P(cand, N) for cand in candidates(word)]
     # import pdb; pdb.set_trace()
     # return max(candidates(word), key=P)
     max_idx = np.argmax(cand_prob)
-    likely_corrections = [x for _, x in sorted(zip(cand_prob,candidate_list))] 
+    likely_corrections = [x for _, x in sorted(zip(cand_prob,candidate_list), reverse=True)] 
     print(f'the most likely corrections of {word} are ', likely_corrections)
+    # likely corrections is the set of words sorted by unigram score
+    # TODO: define function of distances
+    if dist=='hamming':
+        hamming_dist = [textdistance.hamming(corr, word) for corr in likely_corrections]
+        likely_hamming_corrections = [x for _, x in sorted(zip(hamming_dist,likely_corrections), reverse=False)]
+        # max_idx = np.argmmin(hamming_dist)
+        return likely_hamming_corrections[0]
+    # print('hamming distance', hamming_dist)
+    elif dist=='lev':
+        lev_dist = [textdistance.levenshtein(corr, word) for corr in likely_corrections]
+        likely_lev_corrections = [x for _, x in sorted(zip(lev_dist,likely_corrections), reverse=False)]
+        return likely_lev_corrections[0]
+    elif dist=='jw':
+        jw_dist = [textdistance.jaro_winkler(corr, word) for corr in likely_corrections]
+        likely_jw_corrections = [x for _, x in sorted(zip(jw_dist,likely_corrections), reverse=False)]
+        return likely_jw_corrections[0]
+    else:
+        return candidate_list[max_idx]
+    # print('levenstein distance', lev_dist)
+    # TODO: evaluate and rank wrt the other distances and grab argmax
+
+    #evaluate with differe
     # return max(candidates(word), key=P)
-    return candidate_list[max_idx]
+    # return candidate_list[max_idx]
     # return likely_corrections
 
 def candidates(word): 
@@ -88,7 +111,7 @@ def unit_tests():
     assert 0.07 < P('the') < 0.08
     return 'unit_tests pass'
 
-def spelltest(tests, N, verbose=True):
+def spelltest(tests, N, verbose=True, dist='unigram'):
     "Run correction(wrong) on all (right, wrong) pairs; report results."
     import time
     start = time.perf_counter()
@@ -96,7 +119,7 @@ def spelltest(tests, N, verbose=True):
     n = len(tests)
     # for right, wrong in tests:
     for wrong, right in tests:
-        w = correction(wrong, N)
+        w = correction(wrong, N, dist)
         good += (w == right)
         if w != right:
             unknown += (right not in WORDS)
@@ -151,7 +174,8 @@ if __name__ == '__main__':
     
     # spelltest(Testset2(open('ift6285/hmw3/devoir3-train.txt')), N)
     # spelltest(Testset2(open('ift6285/hmw3/devoir3-train-small.txt')), N)
-    spelltest(Testset2(open('ift6285/hmw3/devoir3-train-medium.txt')), N)
+    # spelltest(Testset2(open('ift6285/hmw3/devoir3-train-medium.txt')), N)
+    spelltest(Testset2(open('ift6285/hmw3/devoir3-train-medium.txt')), N, dist='lev')
 
 
 
