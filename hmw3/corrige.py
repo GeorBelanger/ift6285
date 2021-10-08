@@ -40,15 +40,16 @@ def P(word, N):
 
 def correction(word, N): 
     "Most probable spelling correction for word."
-    # import pdb; pdb.set_trace()
     candidate_list = [cand for cand in candidates(word)]
     cand_prob = [P(cand, N) for cand in candidates(word)]
-    
+    # import pdb; pdb.set_trace()
     # return max(candidates(word), key=P)
     max_idx = np.argmax(cand_prob)
-
+    likely_corrections = [x for _, x in sorted(zip(cand_prob,candidate_list))] 
+    print(f'the most likely corrections of {word} are ', likely_corrections)
     # return max(candidates(word), key=P)
     return candidate_list[max_idx]
+    # return likely_corrections
 
 def candidates(word): 
     "Generate possible spelling corrections for word."
@@ -87,7 +88,7 @@ def unit_tests():
     assert 0.07 < P('the') < 0.08
     return 'unit_tests pass'
 
-def spelltest(tests, N, verbose=False):
+def spelltest(tests, N, verbose=True):
     "Run correction(wrong) on all (right, wrong) pairs; report results."
     import time
     start = time.perf_counter()
@@ -100,12 +101,16 @@ def spelltest(tests, N, verbose=False):
         if w != right:
             unknown += (right not in WORDS)
             if verbose:
-                print('correction({}) => {} ({}); expected {} ({})'
-                      .format(wrong, w, WORDS[w], right, WORDS[right]))
+                try:
+                    print('correction({}) => {} ({}); expected {} ({})'
+                        .format(wrong, w, WORDS[w], right, WORDS[right]))
+                except:
+                    print('correction({}) => {} (N/A); expected {} (N/A)'
+                        .format(wrong, w, right))
     dt = time.perf_counter() - start
     print('{:.0%} of {} correct ({:.0%} unknown) at {:.0f} words per second '
           .format(good / n, n, unknown / n, n / dt))
-    
+
 def Testset2(lines):
     "Parse 'right: wrong1 wrong2' lines into [('right', 'wrong1'), ('right', 'wrong2')] pairs."
     return [(right, wrong)
@@ -133,7 +138,6 @@ if __name__ == '__main__':
     WORDS = {}
     # words_file = open('ift6285/hmw3/voc-1bwc.txt')
     words_file = open(args.lexicon)
-    # import pdb; pdb.set_trace()
     for line in words_file:
         print(line)
         try:
@@ -144,8 +148,10 @@ if __name__ == '__main__':
             print(line, e)
     print(WORDS)
     N=sum(WORDS.values())
-    # import pdb; pdb.set_trace()
-    spelltest(Testset2(open('ift6285/hmw3/devoir3-train.txt')), N)
+    
+    # spelltest(Testset2(open('ift6285/hmw3/devoir3-train.txt')), N)
+    # spelltest(Testset2(open('ift6285/hmw3/devoir3-train-small.txt')), N)
+    spelltest(Testset2(open('ift6285/hmw3/devoir3-train-medium.txt')), N)
 
 
 
