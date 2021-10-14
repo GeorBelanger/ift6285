@@ -22,12 +22,17 @@ num_sentences_list = []
 
 from gensim.test.utils import common_texts
 
-model = Word2Vec(sentences=common_texts, vector_size=100, window=5, min_count=1, workers=4)
-model.save("word2vec.model")
-
 num_lines = 0
 filenames = sorted(glob.glob("/u/demorali/corpora/1g-word-lm-benchmark-r13output/training-monolingual.tokenized.shuffled/*"))
-# filenames = filenames[:10]
+num_files_processed = 1
+num_lines_processed = 10000
+filenames = filenames[:num_files_processed]
+
+model = Word2Vec(sentences=common_texts, vector_size=100, window=5, min_count=1, workers=4)
+model_name = f"word2vec.model._{num_files_processed}f_{num_lines_processed}l"
+model.save(model_name)
+
+
 start_time = time.perf_counter()
 
 for i, filename in enumerate(filenames):
@@ -36,7 +41,7 @@ for i, filename in enumerate(filenames):
     with open(filename, 'r') as f:
         lines = f.readlines()
     doc_tokens = 0
-    # lines = lines[:10]
+    lines = lines[:num_lines_processed]
     # import pdb;pdb.set_trace()
     num_lines+=len(lines)
     for line in lines:
@@ -71,10 +76,10 @@ for i, filename in enumerate(filenames):
                 lang="en"                       # set to 'de' for German special handling
             )
             print('line: ', line.split())
-            model = Word2Vec.load("word2vec.model")
+            model = Word2Vec.load(model_name)
             # model.train([["hello", "world"]], total_examples=1, epochs=1)
             model.train(line.split(), total_examples=1, epochs=1)
-            model.save("word2vec.model")
+            model.save(model_name)
 
 
 
@@ -102,37 +107,12 @@ print('100 most frequent words', global_counter.most_common(100))
 #     f1.write(st)
 # f1.close() 
 
-# print('1000 most frequent words after preprocessing', global_counter.most_common(1000))
 
-# f2 = open('freq-top1000', 'a')
-# for word, count in global_counter.most_common(1000):
-#     st = word + " "
-#     f2.write(st)
-# f2.close()
 
-# print('1000 less frequent words after preprocessing', global_counter.most_common()[:-1001:-1])
-
-# f3 = open('freq-less1000', 'a')
-# for word, count in global_counter.most_common()[:-1001:-1]:
-#     st = word + " "
-#     f3.write(st)
-# f3.close()
-
-# #plt.plot(num_tokens)
-# #plt.ylabel('counts')
-# #plt.show()
-# #with open('num_tokens.txt', 'w') as nt:
-# #    for item in num_tokens:
-# #        nt.write("%s\n" % item)
-
-# with open('4_transf_num_types.txt', 'w') as nty:
-#     for item in num_types:
-#         nty.write("%s\n" % item)
-
-with open('w2v_time_list.txt', 'w') as tl:
+with open(f'w2v_time_list_{model_name}.txt', 'w') as tl:
     for item in time_list:
         tl.write("%s\n" % item)
 
-with open('w2v_num_sentences.txt', 'w') as nty:
+with open(f'w2v_num_sentences_{model_name}.txt', 'w') as nty:
     for item in num_sentences_list:
         nty.write("%s\n" % item)
