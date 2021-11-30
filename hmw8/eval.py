@@ -1,6 +1,8 @@
 from sacrebleu.metrics import BLEU
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pandas as pd
+import numpy as np
 
 translations_file = "./hmw8/translations_model_t5-small_num_lines_1000.txt" 
 test_fr_filename ="/Users/belanger/.sacrebleu/wmt14/en-fr.fr"
@@ -40,7 +42,13 @@ for sent_num in range(1000):
     print('sent_num ', sent_num, bleu.corpus_score(hyps1,refs1))
     bleu_scores.append(bleu.corpus_score(hyps1,refs1).score)
 
-plt.hist(bleu_scores, color='blue', edgecolor='black', bins=20)
+bleu_scores=np.array(bleu_scores)
+# plt.hist(bleu_scores, color='blue', edgecolor='black', bins=20)
+# plt.xlabel('BLEU score')
+# plt.ylabel('number of sentences')
+plt.boxplot(bleu_scores)
+plt.show()
+
 # sns.distplot(bleu_scores, hist=True, kde=True, bins=20, color='darkBlue', hist_kws={'edgecolor':'black'}, kde_kws={'linewidth':4})
 # plt.hist(bleu_scores)
 # sns.kdeplot(bleu_scores)
