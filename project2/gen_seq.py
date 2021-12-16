@@ -32,34 +32,32 @@ for i, line_to_order in enumerate(lines):
     words = line_to_order.split()
     number_of_words = len(words)
     words_pred = []
-    curr_string = " "
+    # eos_token_id = tokenizer.eos_token_id
+    curr_string = tokenizer.eos_token
+    #curr_string = " "
     for j in range(number_of_words):
         line_to_order_ids = tokenizer(line_to_order).input_ids
-        # input_context = "Why everything"
+
         input_context = curr_string
         # encode input context
         input_ids = tokenizer(input_context, return_tensors="pt").input_ids
-        # generate 3 candidates using sampling
-        # outputs = model.generate(input_ids=input_ids, max_length=1, num_return_sequences=100, do_sample=True)
+
         outputs = model(input_ids)
         next_token_logits = outputs[0][:, -1, :].squeeze()
 
-        # print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=False))
         line_to_order_logits = np.array([next_token_logits[lto_id].item() for lto_id in line_to_order_ids])
         word_chosen_id = np.argmax(line_to_order_logits)
+
         word_chosen = words[word_chosen_id]
         words_pred.append(word_chosen)
-        if len(curr_string.strip())<1:
-            curr_string = word_chosen
-        else:
-            curr_string = curr_string.strip()+ ' '+word_chosen
+        # if len(curr_string.strip())<1:
+        #     curr_string = word_chosen
+        # else:
+        #     curr_string = curr_string.strip()+ ' '+word_chosen
+        curr_string= curr_string+' '+word_chosen
 
         del words[word_chosen_id]
+        line_to_order = " ".join(words)
 
-        # batches = tokenizer.batch_decode(outputs, skip_special_tokens=False)
-        # len_input_context=len(input_context)
-        # curr_string = [b.strip() for b in batches]
-        # print("curr_string:", curr_string)
-        # print("Generated:", [b[line_length:].strip() for b in batches])
-        # print("Generated:", tokenizer.batch_decode(outputs, skip_special_tokens=True))
 
+# curr_string.lstrip(tokenizer.eos_token).strip()
