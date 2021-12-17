@@ -1,146 +1,254 @@
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-from datasets import load_dataset
+# coding: utf-8
+import argparse
 import time
-import pandas as pd
+import math
+import os
+import torch
+import torch.nn as nn
+import torch.onnx
 
-# from simpletransformers.t5 import T5Model, T5Args
-# import logging
+import data
+import model
 
-# logging.basicConfig(level=logging.INFO)
-# transformers_logger = logging.getLogger("transformers")
-# transformers_logger.setLevel(logging.WARNING)
+parser = argparse.ArgumentParser(description='PyTorch Wikitext-2 RNN/LSTM/GRU/Transformer Language Model')
+parser.add_argument('--data', type=str, default='./data/wikitext-2',
+                    help='location of the data corpus')
+parser.add_argument('--model', type=str, default='LSTM',
+                    help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU, Transformer)')
+parser.add_argument('--emsize', type=int, default=200,
+                    help='size of word embeddings')
+parser.add_argument('--nhid', type=int, default=200,
+                    help='number of hidden units per layer')
+parser.add_argument('--nlayers', type=int, default=2,
+                    help='number of layers')
+parser.add_argument('--lr', type=float, default=20,
+                    help='initial learning rate')
+parser.add_argument('--clip', type=float, default=0.25,
+                    help='gradient clipping')
+parser.add_argument('--epochs', type=int, default=40,
+                    help='upper epoch limit')
+parser.add_argument('--batch_size', type=int, default=20, metavar='N',
+                    help='batch size')
+parser.add_argument('--bptt', type=int, default=35,
+                    help='sequence length')
+parser.add_argument('--dropout', type=float, default=0.2,
+                    help='dropout applied to layers (0 = no dropout)')
+parser.add_argument('--tied', action='store_true',
+                    help='tie the word embedding and softmax weights')
+parser.add_argument('--seed', type=int, default=1111,
+                    help='random seed')
+parser.add_argument('--cuda', action='store_true',
+                    help='use CUDA')
+parser.add_argument('--log-interval', type=int, default=200, metavar='N',
+                    help='report interval')
+parser.add_argument('--save', type=str, default='model.pt',
+                    help='path to save the final model')
+parser.add_argument('--onnx-export', type=str, default='',
+                    help='path to export the final model in onnx format')
 
+parser.add_argument('--nhead', type=int, default=2,
+                    help='the number of heads in the encoder/decoder of the transformer model')
+parser.add_argument('--dry-run', action='store_true',
+                    help='verify the code and the model')
 
-# train_data = [
-#     ["binary classification", "Anakin was Luke's father" , "1"],
-#     ["binary classification", "Luke was a Sith Lord" , "0"],
-#     ["generate question", "Star Wars is an American epic space-opera media franchise created by George Lucas, which began with the eponymous 1977 film and quickly became a worldwide pop-culture phenomenon", "Who created the Star Wars franchise?"],
-#     ["generate question", "Anakin was Luke's father" , "Who was Luke's father?"],
-# ]
-# train_df = pd.DataFrame(train_data)
-# train_df.columns = ["prefix", "input_text", "target_text"]
+args = parser.parse_args()
 
-# eval_data = [
-#     ["binary classification", "Leia was Luke's sister" , "1"],
-#     ["binary classification", "Han was a Sith Lord" , "0"],
-#     ["generate question", "In 2020, the Star Wars franchise's total value was estimated at US$70 billion, and it is currently the fifth-highest-grossing media franchise of all time.", "What is the total value of the Star Wars franchise?"],
-#     ["generate question", "Leia was Luke's sister" , "Who was Luke's sister?"],
-# ]
-# eval_df = pd.DataFrame(eval_data)
-# eval_df.columns = ["prefix", "input_text", "target_text"]
+# Set the random seed manually for reproducibility.
+torch.manual_seed(args.seed)
+if torch.cuda.is_available():
+    if not args.cuda:
+        print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
-# model_args = T5Args()
-# model_args.num_train_epochs = 200
-# model_args.no_save = True
-# model_args.evaluate_generated_text = True
-# model_args.evaluate_during_training = True
-# model_args.evaluate_during_training_verbose = True
+device = torch.device("cuda" if args.cuda else "cpu")
 
-# model_name = "t5-small"
-# model = T5Model("t5", model_name, args=model_args)
+###############################################################################
+# Load data
+###############################################################################
 
+corpus = data.Corpus(args.data)
 
-# def count_matches(labels, preds):
-#     print(labels)
-#     print(preds)
-#     return sum([1 if label == pred else 0 for label, pred in zip(labels, preds)])
+# Starting from sequential data, batchify arranges the dataset into columns.
+# For instance, with the alphabet as the sequence and batch size 4, we'd get
+# ┌ a g m s ┐
+# │ b h n t │
+# │ c i o u │
+# │ d j p v │
+# │ e k q w │
+# └ f l r x ┘.
+# These columns are treated as independent by the model, which means that the
+# dependence of e. g. 'g' on 'f' can not be learned, but allows more efficient
+# batch processing.
 
+def batchify(data, bsz):
+    # Work out how cleanly we can divide the dataset into bsz parts.
+    nbatch = data.size(0) // bsz
+    # Trim off any extra elements that wouldn't cleanly fit (remainders).
+    data = data.narrow(0, 0, nbatch * bsz)
+    # Evenly divide the data across the bsz batches.
+    data = data.view(bsz, -1).t().contiguous()
+    return data.to(device)
 
-# model.train_model(train_df, eval_data=eval_df, matches=count_matches)
+eval_batch_size = 10
+train_data = batchify(corpus.train, args.batch_size)
+val_data = batchify(corpus.valid, eval_batch_size)
+test_data = batchify(corpus.test, eval_batch_size)
 
-# print(model.eval_model(eval_df, matches=count_matches))
+###############################################################################
+# Build the model
+###############################################################################
 
+ntokens = len(corpus.dictionary)
+if args.model == 'Transformer':
+    model = model.TransformerModel(ntokens, args.emsize, args.nhead, args.nhid, args.nlayers, args.dropout).to(device)
+else:
+    model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied).to(device)
 
-model_name = "t5-small"
-model=AutoModelForSeq2SeqLM.from_pretrained(model_name)
-tokenizer = AutoTokenizer.from_pretrained(model_name)
+criterion = nn.NLLLoss()
 
+###############################################################################
+# Training code
+###############################################################################
 
-# test_en_filename="/Users/belanger/.sacrebleu/wmt14/en-fr.en"
-test_en_filename="/Users/belanger/ift6285/project2/projet2-dev/news.test"
-# test_en_filename="project2/project2-dev/hans.test"
-num_lines_processed=10 # 3003
+def repackage_hidden(h):
+    """Wraps hidden states in new Tensors, to detach them from their history."""
 
-start_time = time.perf_counter()
-
-with open(test_en_filename, 'r') as f:
-    lines = f.readlines()
-
-lines = lines[:num_lines_processed]
-
-translated_sentences = []
-for id_line, line in enumerate(lines):
-    print('id_line: ', id_line)
-    print('line: ', line)
-    # line_to_process = "translate English to French: "+line
-    # line= 'services from ebbsfleet will cost £ 3.10 more than a single from the nearest station on the existing network , at gravesend .'
-    # line = 'existing a ebbsfleet station than more 3.10 , the on cost nearest network from £ gravesend the will single at from services .'
-    # line = 'the picked of fflics . welsh festival history remember been the films stars organisers cinema welsh the , have to define at showing and say'
-    line_to_process = "deshuffle: "+line
-    inputs = tokenizer(line_to_process, return_tensors="pt")
-    max_length=len(line.split(' ')); print(max_length)
-    outputs = model.generate(inputs["input_ids"], max_length=40, num_beams=10, early_stopping=True) # max_length=40
-    # print(outputs)
-    translated_sentences.append(tokenizer.decode(outputs[0]))
-    # print(tokenizer.decode(outputs[0]))
-    print(tokenizer.decode(outputs[0]))
-
-end_time = time.perf_counter()
-print(f'time_taken {end_time-start_time}')
-
-output_file_name = 'model_'+model_name+'_num_lines_'+str(num_lines_processed)
-with open(f'deshuffle_{output_file_name}.txt', 'w') as nty:
-    for item in translated_sentences:
-        nty.write("%s\n" % item)
-
-# inputs = tokenizer("translate English to German: Hugging Face is a technology company based in New York and Paris", return_tensors="pt")
-# outputs = model.generate(inputs["input_ids"], max_length=40, num_beams=4, early_stopping=True)
-
-# print(tokenizer.decode(outputs[0]))
-# import logging
-
-# import pandas as pd
-# from simpletransformers.t5 import T5Model, T5Args
-
-# logging.basicConfig(level=logging.INFO)
-# transformers_logger = logging.getLogger("transformers")
-# transformers_logger.setLevel(logging.WARNING)
-
-
-# train_data = [
-#     ["binary classification", "Anakin was Luke's father" , "1"],
-#     ["binary classification", "Luke was a Sith Lord" , "0"],
-#     ["generate question", "Star Wars is an American epic space-opera media franchise created by George Lucas, which began with the eponymous 1977 film and quickly became a worldwide pop-culture phenomenon", "Who created the Star Wars franchise?"],
-#     ["generate question", "Anakin was Luke's father" , "Who was Luke's father?"],
-# ]
-# train_df = pd.DataFrame(train_data)
-# train_df.columns = ["prefix", "input_text", "target_text"]
-
-# eval_data = [
-#     ["binary classification", "Leia was Luke's sister" , "1"],
-#     ["binary classification", "Han was a Sith Lord" , "0"],
-#     ["generate question", "In 2020, the Star Wars franchise's total value was estimated at US$70 billion, and it is currently the fifth-highest-grossing media franchise of all time.", "What is the total value of the Star Wars franchise?"],
-#     ["generate question", "Leia was Luke's sister" , "Who was Luke's sister?"],
-# ]
-# eval_df = pd.DataFrame(eval_data)
-# eval_df.columns = ["prefix", "input_text", "target_text"]
-
-# model_args = T5Args()
-# model_args.num_train_epochs = 200
-# model_args.no_save = True
-# model_args.evaluate_generated_text = True
-# model_args.evaluate_during_training = True
-# model_args.evaluate_during_training_verbose = True
-
-# model = T5Model("t5", "t5-base", args=model_args)
+    if isinstance(h, torch.Tensor):
+        return h.detach()
+    else:
+        return tuple(repackage_hidden(v) for v in h)
 
 
-# def count_matches(labels, preds):
-#     print(labels)
-#     print(preds)
-#     return sum([1 if label == pred else 0 for label, pred in zip(labels, preds)])
+# get_batch subdivides the source data into chunks of length args.bptt.
+# If source is equal to the example output of the batchify function, with
+# a bptt-limit of 2, we'd get the following two Variables for i = 0:
+# ┌ a g m s ┐ ┌ b h n t ┐
+# └ b h n t ┘ └ c i o u ┘
+# Note that despite the name of the function, the subdivison of data is not
+# done along the batch dimension (i.e. dimension 1), since that was handled
+# by the batchify function. The chunks are along dimension 0, corresponding
+# to the seq_len dimension in the LSTM.
+
+def get_batch(source, i):
+    seq_len = min(args.bptt, len(source) - 1 - i)
+    data = source[i:i+seq_len]
+    target = source[i+1:i+1+seq_len].view(-1)
+    return data, target
 
 
-# model.train_model(train_df, eval_data=eval_df, matches=count_matches)
+def evaluate(data_source):
+    # Turn on evaluation mode which disables dropout.
+    model.eval()
+    total_loss = 0.
+    ntokens = len(corpus.dictionary)
+    if args.model != 'Transformer':
+        hidden = model.init_hidden(eval_batch_size)
+    with torch.no_grad():
+        for i in range(0, data_source.size(0) - 1, args.bptt):
+            data, targets = get_batch(data_source, i)
+            if args.model == 'Transformer':
+                output = model(data)
+                output = output.view(-1, ntokens)
+            else:
+                output, hidden = model(data, hidden)
+                hidden = repackage_hidden(hidden)
+            total_loss += len(data) * criterion(output, targets).item()
+    return total_loss / (len(data_source) - 1)
 
-# print(model.eval_model(eval_df, matches=count_matches))
+
+def train():
+    # Turn on training mode which enables dropout.
+    model.train()
+    total_loss = 0.
+    start_time = time.time()
+    ntokens = len(corpus.dictionary)
+    if args.model != 'Transformer':
+        hidden = model.init_hidden(args.batch_size)
+    for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
+        data, targets = get_batch(train_data, i)
+        # Starting each batch, we detach the hidden state from how it was previously produced.
+        # If we didn't, the model would try backpropagating all the way to start of the dataset.
+        model.zero_grad()
+        if args.model == 'Transformer':
+            output = model(data)
+            output = output.view(-1, ntokens)
+        else:
+            hidden = repackage_hidden(hidden)
+            output, hidden = model(data, hidden)
+        loss = criterion(output, targets)
+        loss.backward()
+
+        # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+        for p in model.parameters():
+            p.data.add_(p.grad, alpha=-lr)
+
+        total_loss += loss.item()
+
+        if batch % args.log_interval == 0 and batch > 0:
+            cur_loss = total_loss / args.log_interval
+            elapsed = time.time() - start_time
+            print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
+                    'loss {:5.2f} | ppl {:8.2f}'.format(
+                epoch, batch, len(train_data) // args.bptt, lr,
+                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+            total_loss = 0
+            start_time = time.time()
+        if args.dry_run:
+            break
+
+
+def export_onnx(path, batch_size, seq_len):
+    print('The model is also exported in ONNX format at {}'.
+          format(os.path.realpath(args.onnx_export)))
+    model.eval()
+    dummy_input = torch.LongTensor(seq_len * batch_size).zero_().view(-1, batch_size).to(device)
+    hidden = model.init_hidden(batch_size)
+    torch.onnx.export(model, (dummy_input, hidden), path)
+
+
+# Loop over epochs.
+lr = args.lr
+best_val_loss = None
+
+# At any point you can hit Ctrl + C to break out of training early.
+try:
+    for epoch in range(1, args.epochs+1):
+        epoch_start_time = time.time()
+        train()
+        val_loss = evaluate(val_data)
+        print('-' * 89)
+        print('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+                'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
+                                           val_loss, math.exp(val_loss)))
+        print('-' * 89)
+        # Save the model if the validation loss is the best we've seen so far.
+        if not best_val_loss or val_loss < best_val_loss:
+            with open(args.save, 'wb') as f:
+                torch.save(model, f)
+            best_val_loss = val_loss
+        else:
+            # Anneal the learning rate if no improvement has been seen in the validation dataset.
+            lr /= 4.0
+except KeyboardInterrupt:
+    print('-' * 89)
+    print('Exiting from training early')
+
+# Load the best saved model.
+with open(args.save, 'rb') as f:
+    model = torch.load(f)
+    # after load the rnn params are not a continuous chunk of memory
+    # this makes them a continuous chunk, and will speed up forward pass
+    # Currently, only rnn model supports flatten_parameters function.
+    if args.model in ['RNN_TANH', 'RNN_RELU', 'LSTM', 'GRU']:
+        model.rnn.flatten_parameters()
+
+# Run on test data.
+test_loss = evaluate(test_data)
+print('=' * 89)
+print('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
+    test_loss, math.exp(test_loss)))
+print('=' * 89)
+
+if len(args.onnx_export) > 0:
+    # Export the model in ONNX format.
+    export_onnx(args.onnx_export, batch_size=1, seq_len=args.bptt)
